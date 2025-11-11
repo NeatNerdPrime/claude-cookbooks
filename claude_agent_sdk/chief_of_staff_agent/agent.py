@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
 
 load_dotenv()
 
@@ -18,13 +18,13 @@ load_dotenv()
 def get_activity_text(msg) -> str | None:
     """Extract activity text from a message"""
     try:
-        if "Assistant" in msg.__class__.__name__:
+        if isinstance(msg, AssistantMessage):
             if hasattr(msg, "content") and msg.content:
                 first_content = msg.content[0] if isinstance(msg.content, list) else msg.content
                 if hasattr(first_content, "name"):
                     return f"🤖 Using: {first_content.name}()"
             return "🤖 Thinking..."
-        elif "User" in msg.__class__.__name__:
+        elif isinstance(msg, UserMessage):
             return "✓ Tool completed"
     except (AttributeError, IndexError):
         pass
@@ -44,6 +44,8 @@ async def send_query(
     permission_mode: Literal["default", "plan", "acceptEdits"] = "default",
     output_style: str | None = None,
     activity_handler: Callable[[Any], None | Any] = print_activity,
+    resume: str | None = None,
+    fork_session: bool = False,
 ) -> tuple[str | None, list]:
     """
     Send a query to the Chief of Staff agent with all features integrated.
@@ -54,6 +56,8 @@ async def send_query(
         continue_conversation: Continue the previous conversation if True
         permission_mode: "default" (execute), "plan" (think only), or "acceptEdits"
         output_style: Override output style (e.g., "executive", "technical", "board-report")
+        resume: Session ID to resume (Feature 8: Session Management)
+        fork_session: If True with resume, creates branch; if False, continues same session
 
     Returns:
         Tuple of (result, messages) - result is the final text, messages is the full conversation
@@ -88,11 +92,18 @@ async def send_query(
             "Bash",
             "WebSearch",
         ],
+        "disallowed_tools": ["WebFetch"],
         "continue_conversation": continue_conversation,
         "system_prompt": system_prompt,
         "permission_mode": permission_mode,
         "cwd": os.path.dirname(os.path.abspath(__file__)),
+        "setting_sources": ["project", "local"],
     }
+
+    # Add session management parameters if provided (Feature 8)
+    if resume:
+        options_dict["resume"] = resume
+        options_dict["fork_session"] = fork_session
 
     # add output style if specified
     if output_style:
@@ -113,7 +124,7 @@ async def send_query(
                 else:
                     activity_handler(msg)
 
-                if hasattr(msg, "result"):
+                if isinstance(msg, ResultMessage):
                     result = msg.result
     except Exception as e:
         print(f"❌ Query error: {e}")
