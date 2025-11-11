@@ -27,7 +27,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install nbdime
-        run: uv pip install nbdime
+        run: uv pip install --system nbdime
 
       - name: Get changed notebooks
         id: changed-notebooks
